@@ -1,0 +1,50 @@
+# --- SBT / Scala ---
+target/
+project/target/
+project/project/
+dist/
+lib_managed/
+src_managed/
+project/boot/
+.ensime
+.ensime_cache/
+.ensime_lucene/
+.cache/
+.history/
+.scala_dependencies
+.worksheet/
+
+# Metals / Bloop
+.bloop/
+.metals/
+metals.sbt
+project/metals.sbt
+
+# VS Code
+.vscode/
+.history/
+*.code-workspace
+
+# OS-specific
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+.bsp/
+
+# generated assets
+assets/creators/
+
+# IntelliJ IDEA (if contributors use it)
+.idea/
+*.iml
+out/
+
+# sbt bloop/ivy caches
+.ivy2/
+.coursier/
+
+src/main/resources/application.properties
