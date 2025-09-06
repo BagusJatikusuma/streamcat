@@ -16,7 +16,7 @@ final case class AddWorker(name: String) derives Decoder
 object AddWorker:
   given [F[_]: Concurrent]: EntityDecoder[F, AddWorker] = jsonOf
 
-class JobRoutes[F[_]: Concurrent: Console](
+class JobRoutes[F[_]: Concurrent](
   queue: Queue[F, Event]
 ) extends Http4sDsl[F] {
 
