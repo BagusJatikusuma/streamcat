@@ -6,10 +6,11 @@ import cats.effect.syntax.all.*
 import cats.syntax.all.*
 import fs2.*
 import org.typelevel.log4cats.Logger
-import scala.concurrent.duration.*
 
 import id.stream.streamcat.stream.Command.*
 import id.stream.streamcat.stream.Supervisor.DistributorQueue
+
+import scala.concurrent.duration.*
 
 case class WorkerJob(id: String)
 
@@ -22,20 +23,28 @@ class Supervisor[F[_]: Async: Console: Temporal] private (
 ) {
 
   def run: Stream[F, Unit] =
-    Stream
+    val checkWorkersJobs =
+      Stream.awakeEvery(3.seconds)
+            .evalMap {_ =>
+              for
+                ws <- workers.get
+                _  <- ws.traverse { worker => 
+                  for
+                    jobs <- worker.peekWorks
+                    _    <- logger.info(s"check worker =>  worker: ${worker.getName} has ${jobs.length}")
+                  yield ()
+                }
+              yield ()  
+            }
+
+    val mainOp = Stream
       .fromQueueUnterminated(q)
       .evalMap { _.cmd match
         
         case InitWorker(workername) =>
-          val op: WorkerJob => F[Unit] = workerJob => 
-            for
-              _   <- Temporal[F].sleep(5.seconds)
-            yield ()
-
           for
             _      <- logger.info(s"supervisor $name initing workers")
-            queue  <- Queue.bounded[F, Option[WorkerJob]](1)
-            worker =  Worker(workername, queue, op, logger)
+            worker <- Worker.make(workername, logger)
             _      <- worker.work.start
             _      <- distributor.addWorker(worker)
             _      <- workers.update(lst => worker :: lst)
@@ -60,6 +69,8 @@ class Supervisor[F[_]: Async: Console: Temporal] private (
           delegateWork(job).void
       
       }
+    
+    mainOp.concurrently(checkWorkersJobs)
 
   private def delegateWork(job: WorkerJob): F[Boolean] = 
     distributor.next.flatMap {
@@ -73,18 +84,6 @@ class Supervisor[F[_]: Async: Console: Temporal] private (
           case false  => delegateWork(job) 
         }
     }
-    // workers.get.flatMap { lst =>
-    //   def loop(currList: List[Worker[F, WorkerJob]]): F[Boolean] = currList match
-    //     case Nil => false.pure[F]
-
-    //     case worker :: rest =>
-    //       worker.publish(job).flatMap {
-    //         case true   => true.pure[F]
-    //         case false  => loop(rest)
-    //       }
-       
-    //   loop(lst)
-    // }
   
 }
 
@@ -96,7 +95,7 @@ object Supervisor:
     logger: Logger[F]
   ): F[Supervisor[F]] =
     for
-      workers <- Ref.of(List[Worker[F, WorkerJob]]())
+      workers         <- Ref.of(List[Worker[F, WorkerJob]]())
       workDistributor <- DistributorQueue.make[F]
     yield Supervisor(name, q, workers, logger, workDistributor)
 
