@@ -1,0 +1,65 @@
+<!Doctype html>
+
+<body>
+    <div>
+        <div id="output" style="height: 500px;
+            width: 500px;
+            text-align: left;
+            overflow-y: scroll;
+            border-radius: 5px;
+            padding: 3px;
+            border: solid purple 2px;">
+        </div>
+        <br />
+        <form id="chatform">
+            <input type="text" name="entry" id="entry" />
+            <button type="submit">Send</button>
+        </form>
+    </div>
+    <script>
+        const makeChild = (text) => {
+            const div = document.createElement("div");
+            div.textContent = text;
+            return div;
+        }
+
+        const output = document.getElementById("output");
+        const form = document.getElementById("chatform");
+
+        form.onsubmit = (e) => {
+            e.preventDefault();
+            const entry = document.getElementById("entry");
+            if (entry.value.trim() !== "") {
+                output.appendChild(makeChild("You: " + entry.value));
+                output.scrollTop = output.scrollHeight;
+                socket.send(entry.value);
+                entry.value = "";
+            }
+        }
+
+        output.appendChild(makeChild("Send a message to get started!"))
+
+        const socket = new WebSocket("ws://localhost:8080/ws");
+
+        socket.onopen = () => {
+            console.log("Connected!");
+            socket.send("hello server 👋");
+        };
+
+        socket.onmessage = function(event) {
+            console.log(event.data)
+            output.appendChild(makeChild("Server: " + event.data));
+            output.scrollTop = output.scrollHeight;
+        };
+
+        socket.onclose = () => {
+            console.log("Connection closed");
+        };
+
+        socket.onerror = (err) => {
+            console.error("WebSocket error:", err);
+        };
+    </script>
+</body>
+
+</html>

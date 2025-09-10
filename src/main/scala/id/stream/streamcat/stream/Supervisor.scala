@@ -5,6 +5,7 @@ import cats.effect.std.*
 import cats.effect.syntax.all.*
 import cats.syntax.all.*
 import fs2.*
+import fs2.concurrent.*
 import org.typelevel.log4cats.Logger
 
 import id.stream.streamcat.stream.Command.*
@@ -17,6 +18,7 @@ case class WorkerJob(id: String)
 class Supervisor[F[_]: Async: Console: Temporal] private (
   name: String,
   q: Queue[F, Event],
+  topic: Topic[F, String],
   workers: Ref[F, List[Worker[F, WorkerJob]]],
   logger: Logger[F],
   distributor: DistributorQueue[F]
@@ -24,7 +26,7 @@ class Supervisor[F[_]: Async: Console: Temporal] private (
 
   def run: Stream[F, Unit] =
     val checkWorkersJobs =
-      Stream.awakeEvery(3.seconds)
+      Stream.awakeEvery(10.seconds)
             .evalMap {_ =>
               for
                 ws <- workers.get
@@ -48,6 +50,7 @@ class Supervisor[F[_]: Async: Console: Temporal] private (
             _      <- worker.work.start
             _      <- distributor.addWorker(worker)
             _      <- workers.update(lst => worker :: lst)
+            _      <- topic.publish1(s"Worker $workername is added")
           yield ()
 
         case FireWorker(workername) => 
@@ -60,13 +63,17 @@ class Supervisor[F[_]: Async: Console: Temporal] private (
                   _ <- worker.stopWork
                   _ <- workers.update(lst => lst.filterNot(_.getName == workername))
                   _ <- distributor.removeWorker(workername)
+                  _ <- topic.publish1(s"Worker $workername has been removed")
                 yield ()
             
           yield ()
 
         case MakeWork => 
           val job = WorkerJob(id = java.util.UUID.randomUUID().toString())
-          delegateWork(job).void
+          for
+            isAcc <- delegateWork(job)
+            _     <- if isAcc then topic.publish1(s"Work accepted") else topic.publish1(s"Work is not accepted")
+          yield ()
       
       }
     
@@ -92,12 +99,13 @@ object Supervisor:
   def make[F[_]: Async: Console: Temporal](
     name: String, 
     q: Queue[F, Event],
+    topic: Topic[F, String],
     logger: Logger[F]
   ): F[Supervisor[F]] =
     for
       workers         <- Ref.of(List[Worker[F, WorkerJob]]())
       workDistributor <- DistributorQueue.make[F]
-    yield Supervisor(name, q, workers, logger, workDistributor)
+    yield Supervisor(name, q, topic, workers, logger, workDistributor)
 
   private class DistributorQueue[F[_]: Concurrent](
     workerQueue: Queue[F, Worker[F, WorkerJob]],
