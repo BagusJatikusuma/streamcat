@@ -79,22 +79,30 @@ class Supervisor[F[_]: Async: Console: Temporal: Random] private (
 
         case MakeWork => 
           val job = WorkerJob(id = java.util.UUID.randomUUID().toString())
-          delegateWork(job).void
+          for
+            optWorker <- delegateWork(job)
+            _         <- optWorker match 
+              case Some(worker) => 
+                val msg = Notification(message = s"Job has added to $worker", payload = NotificationType.WorkTaken(worker))
+                notifCenter.publish(msg)
+              case None => ().pure[F]
+              
+          yield ()
       
       }
     
     mainOp
 
-  private def delegateWork(job: WorkerJob): F[Boolean] = 
+  private def delegateWork(job: WorkerJob): F[Option[String]] = 
     distributor.next.flatMap {
       //no worker available
       case None => 
-        false.pure[F]
+        None.pure[F]
 
       case Some(worker) =>
-        worker.publish(job).flatMap {
-          case true   => true.pure[F]
-          case false  => delegateWork(job) 
+        worker.delegate(job).flatMap {
+          case opt@Some(_) => opt.pure[F] 
+          case None        => delegateWork(job) 
         }
     }
   

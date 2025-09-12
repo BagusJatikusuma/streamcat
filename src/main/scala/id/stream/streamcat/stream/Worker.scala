@@ -23,7 +23,7 @@ class Worker[F[_]: Concurrent, A] (
   notifCenter: JobNotificationCenter[F]
 ) {
 
-  def publish(job: A): F[Boolean] = 
+  def delegate(job: A): F[Option[String]] = 
     for
       res <- workQueue.tryOffer(Some(job))
       _   <- 
@@ -31,7 +31,7 @@ class Worker[F[_]: Concurrent, A] (
           works.update(vec => vec.appended(job))
         else
           ().pure[F]
-    yield res
+    yield if res then Some(name) else None
 
   def stopWork = 
     workQueue.offer(None)
