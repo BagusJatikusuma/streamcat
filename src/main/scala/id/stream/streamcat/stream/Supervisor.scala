@@ -5,39 +5,45 @@ import cats.effect.std.*
 import cats.effect.syntax.all.*
 import cats.syntax.all.*
 import fs2.*
-import fs2.concurrent.*
 import org.typelevel.log4cats.Logger
 
 import id.stream.streamcat.stream.Command.*
 import id.stream.streamcat.stream.Supervisor.DistributorQueue
 
-import scala.concurrent.duration.*
+// import scala.concurrent.duration.*
+
+import id.stream.streamcat.JobNotificationCenter
+import id.stream.streamcat.JobNotificationCenter.Notification
+import id.stream.streamcat.JobNotificationCenter.NotificationType
 
 case class WorkerJob(id: String)
 
-class Supervisor[F[_]: Async: Console: Temporal] private (
+class Supervisor[F[_]: Async: Console: Temporal: Random] private (
   name: String,
   q: Queue[F, Event],
-  topic: Topic[F, String],
+  notifCenter: JobNotificationCenter[F],
   workers: Ref[F, List[Worker[F, WorkerJob]]],
   logger: Logger[F],
   distributor: DistributorQueue[F]
 ) {
 
+  def getWorkers: F[List[Worker[F, WorkerJob]]] =
+    workers.get
+
   def run: Stream[F, Unit] =
-    val checkWorkersJobs =
-      Stream.awakeEvery(10.seconds)
-            .evalMap {_ =>
-              for
-                ws <- workers.get
-                _  <- ws.traverse { worker => 
-                  for
-                    jobs <- worker.peekWorks
-                    _    <- logger.info(s"check worker =>  worker: ${worker.getName} has ${jobs.length}")
-                  yield ()
-                }
-              yield ()  
-            }
+    // val checkWorkersJobs =
+    //   Stream.awakeEvery(10.seconds)
+    //         .evalMap {_ =>
+    //           for
+    //             ws <- workers.get
+    //             _  <- ws.traverse { worker => 
+    //               for
+    //                 jobs <- worker.peekWorks
+    //                 _    <- logger.info(s"check worker =>  worker: ${worker.getName} has ${jobs.length}")
+    //               yield ()
+    //             }
+    //           yield ()  
+    //         }
 
     val mainOp = Stream
       .fromQueueUnterminated(q)
@@ -46,11 +52,13 @@ class Supervisor[F[_]: Async: Console: Temporal] private (
         case InitWorker(workername) =>
           for
             _      <- logger.info(s"supervisor $name initing workers")
-            worker <- Worker.make(workername, logger)
+            worker <- Worker.make(workername, logger, notifCenter)
             _      <- worker.work.start
             _      <- distributor.addWorker(worker)
             _      <- workers.update(lst => worker :: lst)
-            _      <- topic.publish1(s"Worker $workername is added")
+
+            notif  =  Notification(message = s"worker $workername is added", payload = NotificationType.WorkerAdded(workername))
+            _      <- notifCenter.publish(notif)
           yield ()
 
         case FireWorker(workername) => 
@@ -60,24 +68,22 @@ class Supervisor[F[_]: Async: Console: Temporal] private (
               case None => ().pure[F]
               case Some(worker) => 
                 for 
-                  _ <- worker.stopWork
-                  _ <- workers.update(lst => lst.filterNot(_.getName == workername))
-                  _ <- distributor.removeWorker(workername)
-                  _ <- topic.publish1(s"Worker $workername has been removed")
+                  _   <- worker.stopWork
+                  _   <- workers.update(lst => lst.filterNot(_.getName == workername))
+                  _   <- distributor.removeWorker(workername)
+                  msg =  Notification(message = s"Worker $workername removed", payload = NotificationType.WorkerFired(workername))
+                  _   <- notifCenter.publish(msg)
                 yield ()
             
           yield ()
 
         case MakeWork => 
           val job = WorkerJob(id = java.util.UUID.randomUUID().toString())
-          for
-            isAcc <- delegateWork(job)
-            _     <- if isAcc then topic.publish1(s"Work accepted") else topic.publish1(s"Work is not accepted")
-          yield ()
+          delegateWork(job).void
       
       }
     
-    mainOp.concurrently(checkWorkersJobs)
+    mainOp
 
   private def delegateWork(job: WorkerJob): F[Boolean] = 
     distributor.next.flatMap {
@@ -96,16 +102,16 @@ class Supervisor[F[_]: Async: Console: Temporal] private (
 
 object Supervisor:
 
-  def make[F[_]: Async: Console: Temporal](
+  def make[F[_]: Async: Console: Temporal: Random](
     name: String, 
     q: Queue[F, Event],
-    topic: Topic[F, String],
+    notifCenter: JobNotificationCenter[F],
     logger: Logger[F]
   ): F[Supervisor[F]] =
     for
       workers         <- Ref.of(List[Worker[F, WorkerJob]]())
       workDistributor <- DistributorQueue.make[F]
-    yield Supervisor(name, q, topic, workers, logger, workDistributor)
+    yield Supervisor(name, q, notifCenter, workers, logger, workDistributor)
 
   private class DistributorQueue[F[_]: Concurrent](
     workerQueue: Queue[F, Worker[F, WorkerJob]],

@@ -8,21 +8,22 @@ import fs2.io.net.Network
 import org.http4s.ember.server.EmberServerBuilder
 import org.http4s.implicits.*
 import org.typelevel.log4cats.Logger
-import fs2.concurrent.*
+import fs2.io.file.Files
 
 import id.stream.streamcat.stream.Event
 
 object StreamcatServer:
 
-  def run[F[_]: Async: Network](
+  def run[F[_]: Async: Files: Network](
     queue: Queue[F, Event],
-    topic: Topic[F, String],
-    logger: Logger[F]
+    notifCenter: JobNotificationCenter[F],
+    logger: Logger[F],
+    supervisor: id.stream.streamcat.stream.Supervisor[F]
   ): F[Unit] =
     for {
       _   <- logger.info("starting server")
 
-      jobRoutes = JobRoutes[F](queue, topic)
+      jobRoutes = JobRoutes[F](queue, notifCenter, supervisor)
 
       _ <- 
         EmberServerBuilder.default[F]

@@ -1,0 +1,172 @@
+<!Doctype html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Worker cat</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+</head>
+<body>
+    <div class="hidden" id="add-worker-modal-container">
+        <div id="add-worker-bg" class="absolute top-0 right-0 bottom-0 left-0 bg-gray-100 opacity-50 z-10">
+        </div>
+        <div class="absolute top-0 right-0 bottom-0 left-0 z-20">
+            <div class="flex items-center justify-center h-full">
+                <div id="add-worker-modal" class="bg-white p-6 rounded-lg shadow-lg">
+                    <h2 class="text-2xl font-bold mb-4">Add Worker</h2>
+                    <form id="add-worker-form" class="space-y-4">
+                        <div>
+                            <label for="worker-name" class="block text-sm font-medium text-gray-700">Worker Name</label>
+                            <input type="text" id="worker-name" name="worker-name" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2" required>
+                        </div>
+                        <div class="flex justify-end space-x-4">
+                            <button type="button" id="cancel-button" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md" onclick="hideAddWorkerModal()">Cancel</button>
+                            <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md">Add Worker</button>
+                        </div>
+                    </form>
+                </div>
+
+            </div>
+        </div>
+    </div>
+    <div class="hidden" id="add-worke-modal-container">
+        <div id="add-worker-bg" class="absolute top-0 right-0 bottom-0 left-0 bg-gray-100 opacity-50 z-10">
+        </div>
+        <div class="absolute top-0 right-0 bottom-0 left-0 z-20">
+            <div class="flex items-center justify-center h-full">
+                <div id="add-worker-modal" class="bg-white p-6 rounded-lg shadow-lg">
+                    <h2 class="text-2xl font-bold mb-4">Add Work</h2>
+                    <form id="add-work-form" class="space-y-4">
+                        <div>
+                            <label for="work" class="block text-sm font-medium text-gray-700">The job</label>
+                            <input type="text" id="work-field" name="work" class="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2" required>
+                        </div>
+                        <div class="flex justify-end space-x-4">
+                            <button type="button" id="cancel-button" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md" onclick="hideAddWorkModal()">Cancel</button>
+                            <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md">Add Worker</button>
+                        </div>
+                    </form>
+                </div>
+
+            </div>
+        </div>
+    </div>
+    <div class="flex p-5 h-screen">
+        <div class="flex-1">
+            <div class="flex space-x-3">
+                <button class="px-4 py-2 bg-blue-600 text-white rounded-md mb-3" onclick="showAddWorkerModal()">
+                    Add Worker
+                </button>
+                <button class="px-4 py-2 bg-blue-600 text-white rounded-md mb-3" onclick="showAddWorkModal()">
+                    Add work
+                </button>
+            </div>
+        </div>
+        <div id="output" class="flex-1 output h-full border border-gray-200 overflow-auto rounded-lg p-3 text-[14px]"></div>
+    </div>
+    <script>
+        const workers = [];
+
+        const makeChild = (text) => {
+            const div = document.createElement("div");
+            div.textContent = text;
+            return div;
+        }
+
+        const output = document.getElementById("output");
+        const form = document.getElementById("add-worker-form");
+        const addJobForm = document.getElementById("add-work-form");
+
+        form.onsubmit = async (e) => {
+            e.preventDefault();
+            
+            const name = document.getElementById("worker-name").value;
+            const resp = await fetch("/worker", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({ name: name })
+            });
+            if (!resp.ok) {
+                return alert("Failed to add worker: " + resp.statusText);
+            }
+
+            hideAddWorkerModal();
+        }
+
+        addJobForm.onsubmit = async (e) => {
+            e.preventDefault();
+            
+            const work = document.getElementById("work-field").value;
+            const resp = await fetch("/make-work", {
+                method: "GET",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                // body: JSON.stringify({ work: work })
+            });
+            if (!resp.ok) {
+                return alert("Failed to add work: " + resp.statusText);
+            }
+
+            hideAddWorkModal();
+        }
+
+        output.appendChild(makeChild("Log sections"))
+
+        const socket = new WebSocket("ws://localhost:8080/ws");
+
+        socket.onopen = () => {
+            console.log("Connected!");
+            setInterval(() => {
+                socket.send("ping");
+            }, 10000);
+        };
+
+        socket.onmessage = function(event) {
+            console.log(event.data);
+            let obj = JSON.parse(event.data);
+            output.appendChild(makeChild("Server: " + obj.message));
+            output.scrollTop = output.scrollHeight;
+            switch (obj.payload.type) {
+                case "WorkerAdded":
+                    break;
+                case "WorkerFired":
+                    break;
+                case "WorkTaken":
+                    break;
+                case "WorkDone":
+                    break;
+                default: return;
+                
+            }
+        };
+
+        socket.onclose = () => {
+            console.log("Connection closed");
+        };
+
+        socket.onerror = (err) => {
+            console.error("WebSocket error:", err);
+        };
+
+        function showAddWorkerModal() {
+            document.getElementById("add-worker-modal-container").classList.remove("hidden");
+        }
+
+        function hideAddWorkerModal() {
+            document.getElementById("add-worker-modal-container").classList.add("hidden");
+        }
+
+        function showAddWorkModal() {
+            document.getElementById("add-worke-modal-container").classList.remove("hidden");
+        }
+
+        function hideAddWorkModal() {
+            document.getElementById("add-worke-modal-container").classList.add("hidden");
+        }
+
+    </script>
+</body>
+
+</html>

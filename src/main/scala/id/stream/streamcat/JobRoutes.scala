@@ -15,27 +15,33 @@ import id.stream.streamcat.stream.Event
 import id.stream.streamcat.stream.Command
 
 import org.http4s.circe.*
-import fs2.concurrent.Topic
 
 final case class AddWorker(name: String) derives Decoder
 object AddWorker:
   given [F[_]: Concurrent]: EntityDecoder[F, AddWorker] = jsonOf
 
-class JobRoutes[F[_]: Async](
+class JobRoutes[F[_]: Files: Async](
   queue: Queue[F, Event],
-  topic: Topic[F, String]
+  notifCenter: JobNotificationCenter[F],
+  supervisor: id.stream.streamcat.stream.Supervisor[F]
 ) extends Http4sDsl[F] {
 
-  given Files[F] = Files.forAsync
+  val workDir = "/home/zenbook/GitLocalRepository/scala3/streamcat"
 
   def publicRoutes = HttpRoutes.of[F] {
 
     case req @ GET -> Root =>
       StaticFile
         .fromPath(
-          fs2.io.file.Path(getClass.getClassLoader.getResource("chat.html").getFile())
+          fs2.io.file.Path(s"$workDir/public/chat.html")
         )
         .getOrElseF(NotFound())
+
+    case GET -> Root / "worker" =>
+      for
+        workers <- supervisor.getWorkers
+        resp    <- Ok(workers)
+      yield resp
 
     case req @ POST -> Root / "worker" => 
       for
@@ -55,7 +61,7 @@ class JobRoutes[F[_]: Async](
   def wsRoutes(wsb: WebSocketBuilder2[F]) = HttpRoutes.of[F] {
 
     case GET -> Root / "ws" =>
-      val send: Stream[F, WebSocketFrame] = topic.subscribe(1000).map(str => WebSocketFrame.Text(str))
+      val send: Stream[F, WebSocketFrame] = notifCenter.subscribe.map(str => WebSocketFrame.Text(str))
 
       val receive: Pipe[F, WebSocketFrame, Unit] = _.evalMap(msg => Async[F].delay(println(msg)))
 
