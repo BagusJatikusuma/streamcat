@@ -99,11 +99,11 @@
             
             const work = document.getElementById("work-field").value;
             const resp = await fetch("/make-work", {
-                method: "GET",
+                method: "POST",
                 headers: {
                     "Content-Type": "application/json"
                 },
-                // body: JSON.stringify({ work: work })
+                body: JSON.stringify({ url: work })
             });
             if (!resp.ok) {
                 return alert("Failed to add work: " + resp.statusText);

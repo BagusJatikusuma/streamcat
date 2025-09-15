@@ -4,5 +4,5 @@ case class Event(id: String, cmd: Command)
 
 enum Command:
   case InitWorker(name: String)
-  case MakeWork
+  case MakeWork(url: String)
   case FireWorker(name: String)

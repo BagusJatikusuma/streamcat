@@ -16,36 +16,22 @@ import id.stream.streamcat.JobNotificationCenter
 import id.stream.streamcat.JobNotificationCenter.Notification
 import id.stream.streamcat.JobNotificationCenter.NotificationType
 
-case class WorkerJob(id: String)
+case class WorkerJob(id: String, url: String)
 
 class Supervisor[F[_]: Async: Console: Temporal: Random] private (
   name: String,
   q: Queue[F, Event],
   notifCenter: JobNotificationCenter[F],
-  workers: Ref[F, List[Worker[F, WorkerJob]]],
+  workers: Ref[F, List[Worker[F]]],
   logger: Logger[F],
   distributor: DistributorQueue[F]
 ) {
 
-  def getWorkers: F[List[Worker[F, WorkerJob]]] =
+  def getWorkers: F[List[Worker[F]]] =
     workers.get
 
   def run: Stream[F, Unit] =
-    // val checkWorkersJobs =
-    //   Stream.awakeEvery(10.seconds)
-    //         .evalMap {_ =>
-    //           for
-    //             ws <- workers.get
-    //             _  <- ws.traverse { worker => 
-    //               for
-    //                 jobs <- worker.peekWorks
-    //                 _    <- logger.info(s"check worker =>  worker: ${worker.getName} has ${jobs.length}")
-    //               yield ()
-    //             }
-    //           yield ()  
-    //         }
-
-    val mainOp = Stream
+    Stream
       .fromQueueUnterminated(q)
       .evalMap { _.cmd match
         
@@ -77,21 +63,19 @@ class Supervisor[F[_]: Async: Console: Temporal: Random] private (
             
           yield ()
 
-        case MakeWork => 
-          val job = WorkerJob(id = java.util.UUID.randomUUID().toString())
+        case MakeWork(url) => 
+          val job = WorkerJob(id = java.util.UUID.randomUUID().toString(), url: String)
           for
             optWorker <- delegateWork(job)
             _         <- optWorker match 
               case Some(worker) => 
-                val msg = Notification(message = s"Job has added to $worker", payload = NotificationType.WorkTaken(worker))
+                val msg = Notification(message = s"Job has added to $worker", payload = NotificationType.WorkTaken(worker, url))
                 notifCenter.publish(msg)
               case None => ().pure[F]
               
           yield ()
       
       }
-    
-    mainOp
 
   private def delegateWork(job: WorkerJob): F[Option[String]] = 
     distributor.next.flatMap {
@@ -117,22 +101,22 @@ object Supervisor:
     logger: Logger[F]
   ): F[Supervisor[F]] =
     for
-      workers         <- Ref.of(List[Worker[F, WorkerJob]]())
+      workers         <- Ref.of(List[Worker[F]]())
       workDistributor <- DistributorQueue.make[F]
     yield Supervisor(name, q, notifCenter, workers, logger, workDistributor)
 
   private class DistributorQueue[F[_]: Concurrent](
-    workerQueue: Queue[F, Worker[F, WorkerJob]],
+    workerQueue: Queue[F, Worker[F]],
     removedRef: Ref[F, Vector[String]]
   ) {
 
-    def addWorker(worker: Worker[F, WorkerJob]): F[Unit] =
+    def addWorker(worker: Worker[F]): F[Unit] =
       workerQueue.offer(worker)
 
     def removeWorker(workerName: String): F[Unit] =
       removedRef.update(vec => vec.appended(workerName))
 
-    def next: F[Option[Worker[F, WorkerJob]]] = 
+    def next: F[Option[Worker[F]]] = 
       workerQueue.tryTake.flatMap {
         case None => 
           None.pure[F]
@@ -163,6 +147,6 @@ object Supervisor:
 
     def make[F[_]: Concurrent]: F[DistributorQueue[F]] =
       for
-        q   <- Queue.unbounded[F, Worker[F, WorkerJob]]
+        q   <- Queue.unbounded[F, Worker[F]]
         ref <- Ref.of(Vector[String]())
       yield DistributorQueue(q, ref)

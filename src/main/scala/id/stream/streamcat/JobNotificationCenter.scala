@@ -26,16 +26,16 @@ object JobNotificationCenter:
   enum NotificationType:
     case WorkerAdded(name: String)
     case WorkerFired(name: String)
-    case WorkTaken(workerName: String)
-    case WorkDone(workerName: String)
+    case WorkTaken(workerName: String, url: String)
+    case WorkDone(workerName: String, url: String)
 
   object NotificationType:
     given Encoder[NotificationType] with
       def apply(t: NotificationType): Json = t match
         case WorkerAdded(name) => Json.obj("type" -> "WorkerAdded".asJson, "payload" -> Json.obj("name" -> name.asJson))
         case WorkerFired(name) => Json.obj("type" -> "WorkerFired".asJson, "payload" -> Json.obj("name" -> name.asJson))
-        case WorkTaken(name)   => Json.obj("type" -> "WorkTaken".asJson)
-        case WorkDone(name)    => Json.obj("type" -> "WorkDone".asJson)
+        case WorkTaken(name, url) => Json.obj("type" -> "WorkTaken".asJson, "payload" -> Json.obj("name" -> name.asJson, "url" -> url.asJson))
+        case WorkDone(name, url)  => Json.obj("type" -> "WorkDone".asJson, "payload" -> Json.obj("name" -> name.asJson, "url" -> url.asJson))
 
   def make[F[_]: Async]: F[JobNotificationCenter[F]] =
     for

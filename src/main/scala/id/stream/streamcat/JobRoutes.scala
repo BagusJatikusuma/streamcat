@@ -20,6 +20,10 @@ final case class AddWorker(name: String) derives Decoder
 object AddWorker:
   given [F[_]: Concurrent]: EntityDecoder[F, AddWorker] = jsonOf
 
+final case class AddJob(url: String) derives Decoder
+object AddJob:
+  given [F[_]: Concurrent]: EntityDecoder[F, AddJob] = jsonOf
+
 class JobRoutes[F[_]: Files: Async](
   queue: Queue[F, Event],
   notifCenter: JobNotificationCenter[F],
@@ -50,9 +54,10 @@ class JobRoutes[F[_]: Files: Async](
         resp    <- Ok(s"worker added")
       yield resp
 
-    case GET -> Root / "make-work" =>
+    case req @ POST -> Root / "make-work" =>
       for 
-        _     <- queue.offer(Event(id = java.util.UUID.randomUUID().toString, cmd = Command.MakeWork))
+        job   <- req.as[AddJob]
+        _     <- queue.offer(Event(id = java.util.UUID.randomUUID().toString, cmd = Command.MakeWork(job.url)))
         resp  <- Ok(s"Work delegated")
       yield resp
   

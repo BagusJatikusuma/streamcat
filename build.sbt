@@ -23,6 +23,7 @@ lazy val root = (project in file("."))
       "io.circe"        %% "circe-parser"        % CirceVersion,
       "org.typelevel" %% "log4cats-core" % "2.7.1",
       "org.typelevel" %% "log4cats-slf4j" % "2.7.1",
+      "com.microsoft.playwright" % "playwright" % "1.54.0",
     ),
     assembly / assemblyMergeStrategy := {
       case "module-info.class" => MergeStrategy.discard
